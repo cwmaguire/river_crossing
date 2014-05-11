@@ -46,7 +46,7 @@ all_moves(Direction, Riverbank) ->
     OtherMoves = [#move{direction = Direction, items = [$f, Item]} || Item <- OtherItems],
     case Direction of
         $> ->
-            OtherMoves ++ [MoveFarmer];
+            OtherMoves;
         $< ->
             [MoveFarmer | OtherMoves]
     end.
@@ -449,29 +449,30 @@ valid_move_test_() ->
                              ["dcf", ""], Predators, []))].
 
 all_moves_test_() ->
-    FR = #move{direction = $>, items = "f"},
     FDR = #move{direction = $>, items = "fd"},
     FCR = #move{direction = $>, items = "fc"},
     FL = #move{direction = $<, items = "f"},
-    [?_assertEqual([FDR, FCR, FR], all_moves($>, "fdc")),
-     ?_assertEqual([FDR, FR], all_moves($>, "fd")),
-     ?_assertEqual([FR], all_moves($>, "f")),
+    [?_assertEqual([FDR, FCR], all_moves($>, "fdc")),
+     ?_assertEqual([FDR], all_moves($>, "fd")),
+     ?_assertEqual([], all_moves($>, "f")),
      ?_assertEqual([FL], all_moves($<, "f")),
-     ?_assertEqual([FDR, FCR, FR], all_moves(["fdc", nil])),
-     ?_assertEqual([FDR, FR], all_moves(["fd", nil])),
-     ?_assertEqual([FR], all_moves(["f", nil])),
+     ?_assertEqual([FDR, FCR], all_moves(["fdc", nil])),
+     ?_assertEqual([FDR], all_moves(["fd", nil])),
+     ?_assertEqual([], all_moves(["f", nil])),
      ?_assertEqual([FL], all_moves(["", "f"]))].
 
 new_valid_move_test_() ->
-    FR = #move{direction = $>, items = "f"},
+    FL = #move{direction = $<, items = "f"},
     FDR = #move{direction = $>, items = "fd"},
     Predators = default_predators(),
     OldState = [["", nil]],
     OldStates = [["d", nil], ["", nil]],
     [ ?_assertEqual([], new_valid_move(["fd", ""], Predators, OldStates)),
      ?_assertEqual([], new_valid_move(["f", ""], Predators, OldState)),
-     ?_assertEqual(FR, new_valid_move(["f", ""], Predators, [])),
-     ?_assertEqual(FR, new_valid_move(["f", "d"], Predators, [["f", nil]])),
+     {"Farmer never needs to go from left to right empty-handed",
+      [?_assertEqual([], new_valid_move(["f", ""], Predators, [])),
+       ?_assertEqual([], new_valid_move(["f", "d"], Predators, [["f", nil]]))]},
+     ?_assertEqual(FL, new_valid_move(["", "f"], Predators, [["", "f"]])),
      ?_assertEqual(FDR, new_valid_move(["fdc", ""], Predators, [])),
      {"Ruthless farmer shoots one dog (duplicates get removed when move from a bank)",
       ?_assertEqual(FDR, new_valid_move(["fdcdc", "dc"], Predators, []))}].
