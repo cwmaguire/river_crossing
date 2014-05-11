@@ -30,10 +30,12 @@ Bonus parts:
 * solve -- generate a winning sequence of moves
 
 Sample Input 1:
+```
 fdcg~
 fc>
 <f
 fd>
+```
 
 Sample Output 1:
 ```
