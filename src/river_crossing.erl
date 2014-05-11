@@ -1,5 +1,6 @@
 -module(river_crossing).
 
+-export([solve_puzzle/1]).
 -export([cross_river/1]).
 
 -include_lib("eunit/include/eunit.hrl").
@@ -12,6 +13,64 @@
 
 -record(move, {direction :: char(),
                items :: list()}).
+
+solve_puzzle(GameInstructions) ->
+    {Riverbanks, _, Predators} = parse(GameInstructions),
+    solve_puzzle(Riverbanks, Predators, [Riverbanks]).
+
+solve_puzzle([[], _] = Riverbanks, _, States) ->
+    {solution, lists:reverse([Riverbanks | States])};
+
+solve_puzzle(Riverbanks, Predators, States) ->
+    case new_valid_move(Riverbanks, Predators, States) of
+        [] ->
+            {unsolvable, Riverbanks, States};
+        Move ->
+            solve_puzzle(apply_move(Riverbanks, Move), Predators, [Riverbanks | States])
+    end.
+
+new_valid_move(Riverbanks, Predators, States) ->
+    valid_move(all_moves(Riverbanks), Riverbanks, Predators, States).
+
+all_moves([LeftBank, RightBank]) ->
+    case farmer(LeftBank) of
+        true ->
+            all_moves($>, LeftBank);
+        false ->
+            all_moves($<, RightBank)
+   end.
+
+all_moves(Direction, Riverbank) ->
+    MoveFarmer = #move{direction = Direction, items = "f"},
+    OtherItems = lists:filter(fun($f) -> false; (_) -> true end, Riverbank),
+    OtherMoves = [#move{direction = Direction, items = [$f, Item]} || Item <- OtherItems],
+    case Direction of
+        $> ->
+            OtherMoves ++ [MoveFarmer];
+        $< ->
+            [MoveFarmer | OtherMoves]
+    end.
+
+valid_move([], _, _, _) -> [];
+valid_move([Move | Moves], Riverbanks, Predators, States) ->
+    NewRiverbanks = apply_move(Riverbanks, Move),
+    case is_safe(NewRiverbanks, Predators) andalso is_new_state(NewRiverbanks, States) of
+        true ->
+            Move;
+        false ->
+            valid_move(Moves, Riverbanks, Predators, States)
+    end.
+
+is_safe([LeftBank, RightBank], Predators) ->
+    [] == unsafe_prey(LeftBank, Predators) andalso
+    [] == unsafe_prey(RightBank, Predators).
+
+is_new_state([NewLeftBank, _], ExistingRiverbanks) ->
+    SortedNewBank = lists:sort(NewLeftBank),
+    RiverbanksEqual = fun([OldLeftBank, _]) ->
+                          SortedNewBank == lists:sort(OldLeftBank)
+                      end,
+    [] == lists:filter(RiverbanksEqual, ExistingRiverbanks).
 
 cross_river(GameInstructions) ->
   {Riverbanks, Moves, Predators} = parse(GameInstructions),
@@ -351,3 +410,100 @@ cross_river_test_() ->
      {"Dragon eats unicorn",
       ?_assertEqual("ud~cf\nUnicorn was eaten.\n",
                     cross_river("ducf~\nd eats u,Unicorn\nu eats c,Candy_Cane\nfc>\n"))}].
+
+is_new_state_test_() ->
+    [?_assert(is_new_state(["", ""], [["a", ""]])),
+     ?_assert(is_new_state(["a", ""], [["", ""]])),
+     ?_assert(is_new_state(["a", ""], [["b", ""]])),
+     ?_assert(is_new_state(["a", ""], [["b", ""], ["c", ""]])),
+     ?_assertNot(is_new_state(["a", ""], [["a", ""]])),
+     ?_assertNot(is_new_state(["a", ""], [["b", ""], ["a", ""]])),
+     ?_assertNot(is_new_state(["a", ""], [["a", ""], ["b", ""]]))].
+
+is_safe_test_() ->
+    Predators = default_predators(),
+    Safe = "dg",
+    Unsafe = "cg",
+    io:format(user, "is_safe_test~n", []),
+    [?_assert(is_safe([Safe, Safe], Predators)),
+     ?_assertNot(is_safe([Unsafe, Safe], Predators)),
+     ?_assertNot(is_safe([Safe, Unsafe], Predators))].
+
+valid_move_test_() ->
+    Predators = default_predators(),
+    MoveFarmerRight = #move{direction = $>, items = "f"},
+    MoveFarmerDogRight = #move{direction = $>, items = "fd"},
+    OldState = [["d", "f"]],
+    [?_assertEqual([], valid_move([], nil, nil, nil)),
+     ?_assertEqual([], valid_move([MoveFarmerRight], ["dcf", ""], Predators, [])),
+     ?_assertEqual([], valid_move([MoveFarmerRight], ["df", ""], Predators, OldState)),
+     ?_assertEqual(MoveFarmerRight, valid_move([MoveFarmerRight], ["df", ""], Predators, [])),
+     ?_assertEqual(MoveFarmerDogRight,
+                  valid_move([MoveFarmerRight, MoveFarmerDogRight],
+                             ["dcf", ""], Predators, []))].
+
+all_moves_test_() ->
+    FR = #move{direction = $>, items = "f"},
+    FDR = #move{direction = $>, items = "fd"},
+    FCR = #move{direction = $>, items = "fc"},
+    FL = #move{direction = $<, items = "f"},
+    [?_assertEqual([FDR, FCR, FR], all_moves($>, "fdc")),
+     ?_assertEqual([FDR, FR], all_moves($>, "fd")),
+     ?_assertEqual([FR], all_moves($>, "f")),
+     ?_assertEqual([FL], all_moves($<, "f")),
+     ?_assertEqual([FDR, FCR, FR], all_moves(["fdc", nil])),
+     ?_assertEqual([FDR, FR], all_moves(["fd", nil])),
+     ?_assertEqual([FR], all_moves(["f", nil])),
+     ?_assertEqual([FL], all_moves(["", "f"]))].
+
+new_valid_move_test_() ->
+    FR = #move{direction = $>, items = "f"},
+    FDR = #move{direction = $>, items = "fd"},
+    Predators = default_predators(),
+    OldState = [["", nil]],
+    OldStates = [["d", nil], ["", nil]],
+    [ ?_assertEqual([], new_valid_move(["fd", ""], Predators, OldStates)),
+     ?_assertEqual([], new_valid_move(["f", ""], Predators, OldState)),
+     ?_assertEqual(FR, new_valid_move(["f", ""], Predators, [])),
+     ?_assertEqual(FR, new_valid_move(["f", "d"], Predators, [["f", nil]])),
+     ?_assertEqual(FDR, new_valid_move(["fdc", ""], Predators, [])),
+     {"Ruthless farmer shoots one dog (duplicates get removed when move from a bank)",
+      ?_assertEqual(FDR, new_valid_move(["fdcdc", "dc"], Predators, []))}].
+
+solve_puzzle_test_() ->
+    Predators = default_predators(),
+    [{"No safe moves: dog is omnivore, chicken eats grain",
+      fun() ->
+          GameInstructions = "fdcg~\nd eats c\nd eats g\nc eats g\n",
+          {unsolvable, _, _} = solve_puzzle(GameInstructions)
+      end},
+     {"No unused moves",
+      fun() ->
+          OldStates = [["dcg", nil],
+                       ["cg", nil],
+                       ["dg", nil],
+                       ["dc", nil]],
+          {unsolvable, _, _} = solve_puzzle(["fdcg", ""], Predators, OldStates)
+      end},
+     {"Solvable with fc>, <f, fg>, <fc, fd>, <f, fc>",
+      fun() ->
+          {solution, _} = solve_puzzle(["fdcg", ""], Predators, []),
+          {solution, _} = solve_puzzle("fdcg~\n")
+      end},
+     {"Solvable by fluke: duplicates are removed when moving from bank to bank",
+      fun() ->
+          {solution, _} = solve_puzzle(["fddccg", ""], Predators, []),
+          {solution, _} = solve_puzzle("fddccg~")
+      end},
+     {"<facepalm> I thought this was unsolvable. The farmer outwitted me.",
+      fun() ->
+          GameInstructions = "fdcg~\nd eats c\nd eats g\n",
+          {solution, _} = solve_puzzle(GameInstructions)
+      end},
+     {"Solvable with anything: t-rex doesn't exist (anymore) but defaults aren't generated",
+      fun() ->
+          TRex = $t,
+          ExtinctPredator = [predator(TRex, "d,Dog"),
+                             predator(TRex, "c,Chicken")],
+          {solution, _} = solve_puzzle(["fdcg", ""], ExtinctPredator, [])
+      end}].
