@@ -35,9 +35,9 @@ new_valid_move(Riverbanks, Predators, States) ->
 all_moves([LeftBank, RightBank]) ->
     case farmer(LeftBank) of
         true ->
-            all_moves($>, LeftBank);
+            all_moves(right, LeftBank);
         false ->
-            all_moves($<, RightBank)
+            all_moves(left, RightBank)
    end.
 
 all_moves(Direction, Riverbank) ->
@@ -45,9 +45,9 @@ all_moves(Direction, Riverbank) ->
     OtherItems = lists:filter(fun($f) -> false; (_) -> true end, Riverbank),
     OtherMoves = [#move{direction = Direction, items = [$f, Item]} || Item <- OtherItems],
     case Direction of
-        $> ->
+        right ->
             OtherMoves;
-        $< ->
+        left ->
             [MoveFarmer | OtherMoves]
     end.
 
@@ -120,7 +120,7 @@ farmer([]) -> false;
 farmer([$f | _]) -> true;
 farmer([_ | Items]) -> farmer(Items).
 
-apply_move([LeftBank, RightBank], #move{direction = $<, items = Items}) ->
+apply_move([LeftBank, RightBank], #move{direction = left, items = Items}) ->
     case(has_items(RightBank, Items)) of
       true ->
           [LeftBank ++ Items, remove_items(RightBank, Items)];
@@ -128,7 +128,7 @@ apply_move([LeftBank, RightBank], #move{direction = $<, items = Items}) ->
           invalid_move
     end;
 
-apply_move([LeftBank, RightBank], #move{direction = $>, items = Items}) ->
+apply_move([LeftBank, RightBank], #move{direction = right, items = Items}) ->
     case(has_items(LeftBank, Items)) of
       true ->
           [remove_items(LeftBank, Items), Items ++ RightBank];
@@ -167,8 +167,11 @@ moves(Instructions) ->
     SortedInstructions = lists:map(fun lists:sort/1, Instructions),
     lists:reverse(lists:foldl(fun parse_move/2, [], SortedInstructions)).
 
-parse_move([Dir | Items], Moves) when Dir =:= $< orelse Dir =:= $> ->
-    [#move{direction = Dir, items = Items} | Moves];
+parse_move([$< | Items], Moves) ->
+    [#move{direction = left, items = Items} | Moves];
+
+parse_move([$> | Items], Moves) ->
+    [#move{direction = right, items = Items} | Moves];
 
 parse_move(_, Moves) ->
     Moves.
@@ -254,13 +257,13 @@ parse_predator_test_() ->
 parse_move_test_() ->
     [{"Move items left",
       fun() ->
-          Move = #move{direction = $<,
+          Move = #move{direction = left,
                            items = "ab"},
           ?assertEqual([Move], parse_move("<ab", []))
       end},
      {"Move items right",
       fun() ->
-          Move = #move{direction = $>,
+          Move = #move{direction = right,
                            items = "ab"},
           ?assertEqual([Move], parse_move(">ab", []))
       end},
@@ -278,7 +281,7 @@ moves_test_() ->
       ?_assertEqual([], moves([]))},
      {"Valid move",
       fun() ->
-          Move = #move{direction = $>,
+          Move = #move{direction = right,
                        items = "ab"},
           ?assertEqual([Move], moves(["ab>"])),
           ?assertEqual([Move], moves(["ab>", "not a move"])),
@@ -287,9 +290,9 @@ moves_test_() ->
       end},
      {"Multiple moves",
       fun() ->
-          Move1 = #move{direction = $>,
+          Move1 = #move{direction = right,
                         items = "ab"},
-          Move2 = #move{direction = $<,
+          Move2 = #move{direction = left,
                         items = "cd"},
           ?assertEqual([Move1, Move2], moves(["ab>", "<cd"]))
       end}].
@@ -337,11 +340,11 @@ has_items_test_() ->
      ?_assertEqual(false, has_items("abcde", "f"))].
 
 apply_move_test_() ->
-    FarmerChickenRight = #move{direction = $>, items = "fc"},
-    FarmerChickenLeft = #move{direction = $<, items = "fc"},
-    FarmerLeft = #move{direction = $<, items = "f"},
-    FarmerFarmerRight = #move{direction = $>, items = "ff"},
-    XYRight = #move{direction = $>, items = "xy"},
+    FarmerChickenRight = #move{direction = right, items = "fc"},
+    FarmerChickenLeft = #move{direction = left, items = "fc"},
+    FarmerLeft = #move{direction = left, items = "f"},
+    FarmerFarmerRight = #move{direction = right, items = "ff"},
+    XYRight = #move{direction = right, items = "xy"},
     [?_assertEqual(["dg", "fc"], apply_move(["fcdg", []], FarmerChickenRight)),
      ?_assertEqual(["fc", "dg"], apply_move([[], "fcdg"], FarmerChickenLeft)),
      ?_assertEqual(["dgf", "c"], apply_move(["dg", "fc"], FarmerLeft)),
@@ -437,8 +440,8 @@ is_safe_test_() ->
 
 valid_move_test_() ->
     Predators = default_predators(),
-    MoveFarmerRight = #move{direction = $>, items = "f"},
-    MoveFarmerDogRight = #move{direction = $>, items = "fd"},
+    MoveFarmerRight = #move{direction = right, items = "f"},
+    MoveFarmerDogRight = #move{direction = right, items = "fd"},
     OldState = [["d", "f"]],
     [?_assertEqual([], valid_move([], nil, nil, nil)),
      ?_assertEqual([], valid_move([MoveFarmerRight], ["dcf", ""], Predators, [])),
@@ -449,21 +452,21 @@ valid_move_test_() ->
                              ["dcf", ""], Predators, []))].
 
 all_moves_test_() ->
-    FDR = #move{direction = $>, items = "fd"},
-    FCR = #move{direction = $>, items = "fc"},
-    FL = #move{direction = $<, items = "f"},
-    [?_assertEqual([FDR, FCR], all_moves($>, "fdc")),
-     ?_assertEqual([FDR], all_moves($>, "fd")),
-     ?_assertEqual([], all_moves($>, "f")),
-     ?_assertEqual([FL], all_moves($<, "f")),
+    FDR = #move{direction = right, items = "fd"},
+    FCR = #move{direction = right, items = "fc"},
+    FL = #move{direction = left, items = "f"},
+    [?_assertEqual([FDR, FCR], all_moves(right, "fdc")),
+     ?_assertEqual([FDR], all_moves(right, "fd")),
+     ?_assertEqual([], all_moves(right, "f")),
+     ?_assertEqual([FL], all_moves(left, "f")),
      ?_assertEqual([FDR, FCR], all_moves(["fdc", nil])),
      ?_assertEqual([FDR], all_moves(["fd", nil])),
      ?_assertEqual([], all_moves(["f", nil])),
      ?_assertEqual([FL], all_moves(["", "f"]))].
 
 new_valid_move_test_() ->
-    FL = #move{direction = $<, items = "f"},
-    FDR = #move{direction = $>, items = "fd"},
+    FL = #move{direction = left, items = "f"},
+    FDR = #move{direction = right, items = "fd"},
     Predators = default_predators(),
     OldState = [["", nil]],
     OldStates = [["d", nil], ["", nil]],
