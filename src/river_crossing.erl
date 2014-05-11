@@ -189,4 +189,10 @@ cross_river_test_() ->
                     cross_river("fcdg~\nfd>\n"))},
      {"Grain eaten right off the bat",
       ?_assertEqual("cg~fd\nGrain was eaten.\n",
-                    cross_river("cg~~fd\n<f"))}].
+                    cross_river("cg~~fd\n<f"))},
+     {"Chicken and dog moved",
+      ?_assertEqual("g~dfc\n",
+                    cross_river("fdcg~\nfc>\n<f\nfd>\n"))},
+     {"Chicken and dog moved",
+      ?_assertEqual("g~dfc\n",
+                    cross_river("fdcg~\nfc>\n<f\nfd>\n"))}].
