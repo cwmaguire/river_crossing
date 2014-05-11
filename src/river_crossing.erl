@@ -33,7 +33,7 @@ new_valid_move(Riverbanks, Predators, States) ->
     valid_move(all_moves(Riverbanks), Riverbanks, Predators, States).
 
 all_moves([LeftBank, RightBank]) ->
-    case farmer(LeftBank) of
+    case has_farmer(LeftBank) of
         true ->
             all_moves(right, LeftBank);
         false ->
@@ -109,16 +109,15 @@ unsafe_prey(_, []) -> [];
 unsafe_prey(Riverbank, [#predator{predator = Predator,
                                   prey = Prey,
                                   prey_name = PreyName} | Predators]) ->
-    case not farmer(Riverbank) andalso has_items(Riverbank, [Predator, Prey]) of
+    case not has_farmer(Riverbank) andalso has_items(Riverbank, [Predator, Prey]) of
         true ->
             PreyName;
         false ->
             unsafe_prey(Riverbank, Predators)
     end.
 
-farmer([]) -> false;
-farmer([$f | _]) -> true;
-farmer([_ | Items]) -> farmer(Items).
+has_farmer(Items) ->
+    [$f] == lists:filter(fun($f) -> true; (_) -> false end, Items).
 
 apply_move([LeftBank, RightBank], #move{direction = left, items = Items}) ->
     case(has_items(RightBank, Items)) of
@@ -353,11 +352,11 @@ apply_move_test_() ->
      ?_assertEqual(invalid_move, apply_move(["fcdg", []], XYRight))].
 
 farmer_test_() ->
-    [?_assertEqual(true, farmer("abcdef")),
-     ?_assertEqual(true, farmer("fedcba")),
-     ?_assertEqual(true, farmer("defgh")),
-     ?_assertEqual(true, farmer("f")),
-     ?_assertEqual(false, farmer("a"))].
+    [?_assertEqual(true, has_farmer("abcdef")),
+     ?_assertEqual(true, has_farmer("fedcba")),
+     ?_assertEqual(true, has_farmer("defgh")),
+     ?_assertEqual(true, has_farmer("f")),
+     ?_assertEqual(false, has_farmer("a"))].
 
 unsafe_prey_test_() ->
     PredatorAb = predator($a, "b,Bob"),
