@@ -153,7 +153,7 @@ parse(GameInstructions) ->
   {Riverbanks, Moves, Predators}.
 
 riverbanks([]) -> [[], []];
-riverbanks([$~ | Items]) -> [[], Items];
+riverbanks([$~ | RightBank]) -> [[], RightBank];
 riverbanks(Items) ->
     case lists:reverse(Items) of
         [$~ | LeftBank] ->
