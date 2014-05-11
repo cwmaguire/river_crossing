@@ -5,84 +5,74 @@
 -include_lib("eunit/include/eunit.hrl").
 
 -define(RIVER, $~).
--define(PREDATORS, [{"cg", "Grain"}, {"dc", "Chicken"}]).
 
-cross_river(Simulation) ->
-  [Position | Moves] = position_and_moves(Simulation),
-  Riverbanks = riverbanks(Position),
-  cross_river(Riverbanks, Moves).
+-record(predator, {predator :: char(),
+                   prey :: char(),
+                   prey_name :: string()}).
 
-cross_river(Riverbanks, _Moves = []) ->
-    io:format("Riverbanks: ~p, ~p~n", Riverbanks),
-    PreyString  = case eaten(Riverbanks) of
+-record(move, {direction :: char(),
+               items :: list()}).
+
+cross_river(GameInstructions) ->
+  {Riverbanks, Moves, Predators} = parse(GameInstructions),
+  cross_river(Riverbanks, Moves, Predators).
+
+cross_river(Riverbanks, _Moves = [], Predators) ->
+    PreyString  = case eaten(Riverbanks, Predators) of
         [] ->
             [];
         Prey ->
             Prey ++ " was eaten.\n"
     end,
-    position(Riverbanks) ++ "\n" ++ PreyString;
+    river_desc(Riverbanks) ++ "\n" ++ PreyString;
 
-cross_river(Riverbanks, [Move | Moves]) ->
-    case eaten(Riverbanks) of
+cross_river(Riverbanks, [Move | Moves], Predators) ->
+    case eaten(Riverbanks, Predators) of
         [] ->
-            cross_river(apply_move(Riverbanks, Move), Moves);
+            cross_river(apply_move(Riverbanks, Move), Moves, Predators);
         Eaten ->
-            position(Riverbanks) ++ "\n" ++ Eaten ++ " was eaten.\n"
+            river_desc(Riverbanks) ++ "\n" ++ Eaten ++ " was eaten.\n"
     end.
 
-riverbanks([]) -> [[], []];
-riverbanks([$~ | Items]) -> [[], Items];
-riverbanks(Items) ->
-    case lists:reverse(Items) of
-        [$~ | LeftBank] ->
-            [LeftBank, []];
-        _ ->
-            string:tokens(Items, "~")
-    end.
-
-position([Leftbank, Rightbank]) ->
+river_desc([Leftbank, Rightbank]) ->
     Leftbank ++ [?RIVER] ++ Rightbank.
-
-eaten(Riverbanks) ->
-    eaten(Riverbanks, ?PREDATORS).
 
 eaten([], _) -> [];
 eaten([Riverbank | Riverbanks], Predators) ->
-    case prey(Riverbank, Predators) of
+    case unsafe_prey(Riverbank, Predators) of
         [] ->
             eaten(Riverbanks, Predators);
         Prey->
             Prey
     end.
 
-prey(_, []) -> [];
-prey(Riverbank, [{[Predator, Prey], PreyName} | Predators]) ->
+unsafe_prey(_, []) -> [];
+unsafe_prey(Riverbank, [#predator{predator = Predator,
+                                  prey = Prey,
+                                  prey_name = PreyName} | Predators]) ->
     case not farmer(Riverbank) andalso has_items(Riverbank, [Predator, Prey]) of
         true ->
             PreyName;
         false ->
-            prey(Riverbank, Predators)
+            unsafe_prey(Riverbank, Predators)
     end.
 
 farmer([]) -> false;
 farmer([$f | _]) -> true;
 farmer([_ | Items]) -> farmer(Items).
 
-apply_move([LeftBank, RightBank], [$< | Movers]) ->
-    case(has_items(RightBank, Movers)) of
+apply_move([LeftBank, RightBank], #move{direction = $<, items = Items}) ->
+    case(has_items(RightBank, Items)) of
       true ->
-          io:format("Moving ~p to ~p from ~p~n", [Movers, LeftBank, RightBank]),
-          [LeftBank ++ Movers, remove_items(RightBank, Movers)];
+          [LeftBank ++ Items, remove_items(RightBank, Items)];
       false ->
           invalid_move
     end;
 
-apply_move([LeftBank, RightBank], Move) ->
-    [$> | Movers] = lists:reverse(Move),
-    case(has_items(LeftBank, Movers)) of
+apply_move([LeftBank, RightBank], #move{direction = $>, items = Items}) ->
+    case(has_items(LeftBank, Items)) of
       true ->
-          io:format("Moving ~p to ~p from ~p~n", [Movers, RightBank, LeftBank]),
-          [remove_items(LeftBank, Movers), Movers ++ RightBank];
+          [remove_items(LeftBank, Items), Items ++ RightBank];
       false ->
           invalid_move
     end.
@@ -97,14 +87,175 @@ remove_items(Riverbank, []) -> Riverbank;
 remove_items(Riverbank, [Item | Items]) ->
     remove_items(lists:filter(fun(X) when X =:= Item -> false; (_) -> true end, Riverbank), Items).
 
-position_and_moves(Simulation) ->
-  string:tokens(Simulation, [$\n]).
+parse(GameInstructions) ->
+  [River | MovesAndPredators] = string:tokens(GameInstructions, [$\n]),
+  Riverbanks = riverbanks(River),
+  Moves = moves(MovesAndPredators),
+  Predators = predators(MovesAndPredators),
+  {Riverbanks, Moves, Predators}.
+
+riverbanks([]) -> [[], []];
+riverbanks([$~ | Items]) -> [[], Items];
+riverbanks(Items) ->
+    case lists:reverse(Items) of
+        [$~ | LeftBank] ->
+            [LeftBank, []];
+        _ ->
+            string:tokens(Items, "~")
+    end.
+
+moves(Instructions) ->
+    SortedInstructions = lists:map(fun lists:sort/1, Instructions),
+    lists:reverse(lists:foldl(fun parse_move/2, [], SortedInstructions)).
+
+parse_move([Dir | Items], Moves) when Dir =:= $< orelse Dir =:= $> ->
+    [#move{direction = Dir, items = Items} | Moves];
+
+parse_move(_, Moves) ->
+    Moves.
+
+predators(Instructions) ->
+    Predators = lists:foldl(fun parse_predator/2, [], Instructions),
+    case Predators of
+        [] ->
+            default_predators();
+        _ ->
+            Predators
+    end.
+
+parse_predator(Instruction, Predators) ->
+    case string:tokens(Instruction, " ") of
+        [[Predator], "eats", PreyWithName] ->
+            [predator(Predator, PreyWithName) | Predators];
+        _ ->
+            Predators
+    end.
+
+predator(Predator, PreyWithName) ->
+    {[PreyChar], PreyName} = case string:tokens(PreyWithName, ",") of
+        [Prey, Name] ->
+           {Prey, Name};
+        [Prey] ->
+           {Prey, Prey}
+    end,
+    #predator{predator = Predator,
+              prey = PreyChar,
+              prey_name = PreyName}.
+
+default_predators() ->
+    [#predator{predator = $d,
+               prey = $c,
+               prey_name = "Chicken"},
+     #predator{predator = $c,
+               prey = $g,
+               prey_name = "Grain"}].
 
 %% ---- TESTS ----
 
-position_and_moves_test_() ->
-    [?_assertEqual(["fdcg~", "fc>", "<f"], position_and_moves("fdcg~\nfc>\n<f")),
-     ?_assertEqual(["no_moves"], position_and_moves("no_moves"))].
+predator_test_() ->
+    [{"Predator without prey name",
+      fun() ->
+          Predator = #predator{predator = $a,
+                               prey = $b,
+                               prey_name = "b"},
+          ?assertEqual(Predator, predator($a, "b"))
+      end},
+     {"Predator with missing prey name (i.e. trailing comma)",
+      fun() ->
+          Predator = #predator{predator = $a,
+                               prey = $b,
+                               prey_name = "b"},
+          ?assertEqual(Predator, predator($a, "b,"))
+      end},
+     {"Predator with prey name",
+      fun() ->
+          Predator = #predator{predator = $a,
+                               prey = $b,
+                               prey_name = "Buffalo"},
+          ?assertEqual(Predator, predator($a, "b,Buffalo"))
+      end}].
+
+parse_predator_test_() ->
+    [{"Not specified or missing name (i.e. trailing comma)",
+      fun() ->
+          Predator = #predator{predator = $a,
+                               prey = $b,
+                               prey_name = "b"},
+          ?assertEqual([Predator], parse_predator("a eats b", [])),
+          ?assertEqual([Predator], parse_predator("a eats b,", []))
+      end},
+     {"Name specified",
+      fun() ->
+          Predator = #predator{predator = $a,
+                               prey = $b,
+                               prey_name = "Barnacle_Bill"},
+          ?assertEqual([Predator], parse_predator("a eats b,Barnacle_Bill", []))
+      end}].
+
+parse_move_test_() ->
+    [{"Move items left",
+      fun() ->
+          Move = #move{direction = $<,
+                           items = "ab"},
+          ?assertEqual([Move], parse_move("<ab", []))
+      end},
+     {"Move items right",
+      fun() ->
+          Move = #move{direction = $>,
+                           items = "ab"},
+          ?assertEqual([Move], parse_move(">ab", []))
+      end},
+     {"Not a valid move (at this point in the code)",
+      fun() ->
+          ?assertEqual([], parse_move("a>b", []))
+      end},
+     {"Not a valid move",
+      fun() ->
+          ?assertEqual([], parse_move("ab", []))
+      end}].
+
+moves_test_() ->
+    [{"No valid moves",
+      ?_assertEqual([], moves([]))},
+     {"Valid move",
+      fun() ->
+          Move = #move{direction = $>,
+                       items = "ab"},
+          ?assertEqual([Move], moves(["ab>"])),
+          ?assertEqual([Move], moves(["ab>", "not a move"])),
+          ?assertEqual([Move], moves([">ab"])),
+          ?assertEqual([Move], moves(["a>b"]))
+      end},
+     {"Multiple moves",
+      fun() ->
+          Move1 = #move{direction = $>,
+                        items = "ab"},
+          Move2 = #move{direction = $<,
+                        items = "cd"},
+          ?assertEqual([Move1, Move2], moves(["ab>", "<cd"]))
+      end}].
+
+riverbanks_test_() ->
+    [?_assertEqual([[], []], riverbanks([])),
+     ?_assertEqual([[], []], riverbanks("~")),
+     ?_assertEqual(["a", []], riverbanks("a~")),
+     ?_assertEqual(["ba", []], riverbanks("ab~")),
+     ?_assertEqual([[], "a"], riverbanks("~a")),
+     ?_assertEqual([[], "ab"], riverbanks("~ab")),
+     ?_assertEqual(["a", "b"], riverbanks("a~b")),
+     ?_assertEqual(["a", "bc"], riverbanks("a~bc"))].
+
+parse_test_() ->
+    [{"No items, no moves, no predators",
+      fun() ->
+          Expected= {[[], []], [], default_predators()},
+          ?assertEqual(Expected, parse("~\n"))
+      end},
+     {"Items but no moves or predators",
+      fun() ->
+          Expected= {["a", "b"], [], default_predators()},
+          ?assertEqual(Expected, parse("a~b\n"))
+      end}].
 
 remove_items_test_() ->
     [?_assertEqual("abc", remove_items("abcde", "de")),
@@ -127,12 +278,17 @@ has_items_test_() ->
      ?_assertEqual(false, has_items("abcde", "f"))].
 
 apply_move_test_() ->
-    [?_assertEqual(["dg", "cf"], apply_move(["fcdg", []], "fc>")),
-     ?_assertEqual(["fc", "dg"], apply_move([[], "fcdg"], "<fc")),
-     ?_assertEqual(["dgf", "c"], apply_move(["dg", "fc"], "<f")),
-     ?_assertEqual(invalid_move, apply_move(["fcdg", []], "<fc")),
-     ?_assertEqual(invalid_move, apply_move(["fcdg", []], "ff>")),
-     ?_assertEqual(invalid_move, apply_move(["fcdg", []], "xy>"))].
+    FarmerChickenRight = #move{direction = $>, items = "fc"},
+    FarmerChickenLeft = #move{direction = $<, items = "fc"},
+    FarmerLeft = #move{direction = $<, items = "f"},
+    FarmerFarmerRight = #move{direction = $>, items = "ff"},
+    XYRight = #move{direction = $>, items = "xy"},
+    [?_assertEqual(["dg", "fc"], apply_move(["fcdg", []], FarmerChickenRight)),
+     ?_assertEqual(["fc", "dg"], apply_move([[], "fcdg"], FarmerChickenLeft)),
+     ?_assertEqual(["dgf", "c"], apply_move(["dg", "fc"], FarmerLeft)),
+     ?_assertEqual(invalid_move, apply_move(["fcdg", []], FarmerChickenLeft)),
+     ?_assertEqual(invalid_move, apply_move(["fcdg", []], FarmerFarmerRight)),
+     ?_assertEqual(invalid_move, apply_move(["fcdg", []], XYRight))].
 
 farmer_test_() ->
     [?_assertEqual(true, farmer("abcdef")),
@@ -141,44 +297,40 @@ farmer_test_() ->
      ?_assertEqual(true, farmer("f")),
      ?_assertEqual(false, farmer("a"))].
 
-prey_test_() ->
-    [?_assertEqual([], prey("", [])),
-     ?_assertEqual([], prey("ab", [{"ac", "Chuck Norris"}])),
-     ?_assertEqual([], prey("ab", [{"ac", "Chuck Norris"}, {"ae", "Ed Sullivan"}])),
-     ?_assertEqual("Bob", prey("ab", [{"ab", "Bob"}])),
-     ?_assertEqual("Bob", prey("ab", [{"ab", "Bob"}, {"ac", "Chuck Norris"}])),
-     ?_assertEqual("Bob", prey("ab", [{"ac", "Chuck Norris"}, {"ab", "Bob"}]))].
+unsafe_prey_test_() ->
+    PredatorAb = predator($a, "b,Bob"),
+    PredatorAc = predator($a, "c"),
+    PredatorAe = predator($a, "e"),
+    [?_assertEqual([], unsafe_prey("", [])),
+     ?_assertEqual([], unsafe_prey("ab", [PredatorAc])),
+     ?_assertEqual([], unsafe_prey("ab", [PredatorAc, PredatorAe])),
+     ?_assertEqual("Bob", unsafe_prey("ab", [PredatorAb])),
+     ?_assertEqual("Bob", unsafe_prey("ab", [PredatorAb, PredatorAc])),
+     ?_assertEqual("Bob", unsafe_prey("ab", [PredatorAc, PredatorAb]))].
 
 eaten_test_() ->
-    [?_assertEqual([], eaten([])),
+    ChickenGrain = predator($c, "g,Grain"),
+    GrainChicken = predator($g, "c,Chicken"),
+    DogChicken = predator($d, "c,Chicken"),
+    [?_assertEqual([], eaten([], default_predators())),
      ?_assertEqual([], eaten([], [])),
-     ?_assertEqual([], eaten(["cf", []])),
-     ?_assertEqual([], eaten([[], "cf"])),
-     ?_assertEqual([], eaten(["cfg", []])),
-     ?_assertEqual("Grain", eaten(["gc", []])),
-     ?_assertEqual("Chicken", eaten(["abcdekz", []])),
-     ?_assertEqual("Grain", eaten(["cg", []])),
-     ?_assertEqual("Grain", eaten([[], "cg"])),
-     ?_assertEqual("Grain", eaten(["cg", []], [{"cg", "Grain"}])),
-     ?_assertEqual("Chicken", eaten([[], "cg"], [{"cg", "Chicken"}])),
-     ?_assertEqual("Grain", eaten(["cg", []], [{"cg", "Grain"}, {"dc", "Chicken"}])),
-     ?_assertEqual("Grain", eaten(["cg", []], [{"dc", "Chicken"}, {"cg", "Grain"}]))].
+     ?_assertEqual([], eaten(["cf", []], default_predators())),
+     ?_assertEqual([], eaten([[], "cf"], default_predators())),
+     ?_assertEqual([], eaten(["cfg", []], default_predators())),
+     ?_assertEqual("Grain", eaten(["gc", []], default_predators())),
+     ?_assertEqual("Chicken", eaten(["abcdekz", []], default_predators())),
+     ?_assertEqual("Grain", eaten(["cg", []], default_predators())),
+     ?_assertEqual("Grain", eaten([[], "cg"], default_predators())),
+     ?_assertEqual("Grain", eaten(["cg", []], [ChickenGrain])),
+     ?_assertEqual("Chicken", eaten([[], "cg"], [GrainChicken])),
+     ?_assertEqual("Grain", eaten(["cg", []], [ChickenGrain, DogChicken])),
+     ?_assertEqual("Grain", eaten(["cg", []], [DogChicken, ChickenGrain]))].
 
-riverbanks_test_() ->
-    [?_assertEqual([[], []], riverbanks([])),
-     ?_assertEqual([[], []], riverbanks("~")),
-     ?_assertEqual(["a", []], riverbanks("a~")),
-     ?_assertEqual(["ba", []], riverbanks("ab~")),
-     ?_assertEqual([[], "a"], riverbanks("~a")),
-     ?_assertEqual([[], "ab"], riverbanks("~ab")),
-     ?_assertEqual(["a", "b"], riverbanks("a~b")),
-     ?_assertEqual(["a", "bc"], riverbanks("a~bc"))].
-
-position_test_() ->
-    [?_assertEqual("~", position(["", ""])),
-     ?_assertEqual("a~", position(["a", ""])),
-     ?_assertEqual("~a", position(["", "a"])),
-     ?_assertEqual("a~b", position(["a", "b"]))].
+river_desc_test_() ->
+    [?_assertEqual("~", river_desc(["", ""])),
+     ?_assertEqual("a~", river_desc(["a", ""])),
+     ?_assertEqual("~a", river_desc(["", "a"])),
+     ?_assertEqual("a~b", river_desc(["a", "b"]))].
 
 cross_river_test_() ->
     [{"Successful crossing",
