@@ -347,4 +347,7 @@ cross_river_test_() ->
                     cross_river("fdcg~\nfc>\n<f\nfd>\n"))},
      {"Chicken and dog moved",
       ?_assertEqual("g~dfc\n",
-                    cross_river("fdcg~\nfc>\n<f\nfd>\n"))}].
+                    cross_river("fdcg~\nfc>\n<f\nfd>\n"))},
+     {"Dragon eats unicorn",
+      ?_assertEqual("ud~cf\nUnicorn was eaten.\n",
+                    cross_river("ducf~\nd eats u,Unicorn\nu eats c,Candy_Cane\nfc>\n"))}].
